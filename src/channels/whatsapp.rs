@@ -1,5 +1,5 @@
 use crate::auth;
-use crate::config::{Config, WhatsAppConfig, resolve_secret};
+use crate::config::{Config, WhatsAppConfig};
 use crate::workspace;
 use anyhow::Result;
 use axum::{
@@ -173,8 +173,12 @@ async fn send_wa_message(
 
 /// Run WhatsApp webhook server.
 pub async fn run(cfg: &Config, wa: &WhatsAppConfig) -> Result<()> {
-    let token = resolve_secret(&wa.access_token, "WHATSAPP_ACCESS_TOKEN")
-        .ok_or_else(|| anyhow::anyhow!("WhatsApp access token not configured"))?;
+    let token = wa
+        .access_token
+        .clone()
+        .or_else(|| std::env::var("WHATSAPP_ACCESS_TOKEN").ok())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("WHATSAPP_ACCESS_TOKEN not set. Run `rustclaw init` or set the env var."))?;
 
     let state = Arc::new(AppState {
         cfg: cfg.clone(),

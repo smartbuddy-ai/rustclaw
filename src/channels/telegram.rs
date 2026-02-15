@@ -1,13 +1,16 @@
 use crate::auth;
-use crate::config::{Config, TelegramConfig, resolve_secret};
+use crate::config::{Config, TelegramConfig};
 use crate::workspace;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// Resolve the bot token from config or environment.
+/// Resolve the bot token from config or environment (.env loaded by dotenvy).
 fn resolve_token(tg: &TelegramConfig) -> Result<String> {
-    resolve_secret(&tg.bot_token, "TELEGRAM_BOT_TOKEN")
-        .ok_or_else(|| anyhow::anyhow!("Telegram bot token not configured"))
+    tg.bot_token
+        .clone()
+        .or_else(|| std::env::var("TELEGRAM_BOT_TOKEN").ok())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("TELEGRAM_BOT_TOKEN not set. Run `rustclaw init` or set the env var."))
 }
 
 /// Telegram Bot API response wrapper.

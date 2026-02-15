@@ -17,23 +17,8 @@ Experimental subset of [OpenClaw](https://github.com/smartbuddy-ai/openclaw) —
 # Build
 cargo build --release
 
-# Initialize workspace
+# Interactive setup — creates workspace, config, and .env
 rustclaw init
-
-# Configure
-cat > ~/.rustclaw/config.toml << 'EOF'
-workspace_dir = "~/.rustclaw/workspace"
-
-[auth]
-default_provider = "anthropic"
-default_model = "claude-sonnet-4-20250514"
-# anthropic_api_key = "sk-ant-..." # or set ANTHROPIC_API_KEY env var
-
-[channels.telegram]
-enabled = true
-# bot_token = "123:ABC" # or set TELEGRAM_BOT_TOKEN env var
-allow_from = ["YOUR_USER_ID"]
-EOF
 
 # Start the gateway
 rustclaw start
@@ -47,15 +32,23 @@ rustclaw cron list
 rustclaw cron remove <id>
 ```
 
+## Setup Flow (`rustclaw init`)
+
+The init command walks you through:
+
+1. **Workspace files** — creates SOUL.md, USER.md, IDENTITY.md, AGENTS.md, TOOLS.md, MEMORY.md, HEARTBEAT.md
+2. **LLM API keys** — prompts for Anthropic and/or OpenAI keys
+3. **Channel config** — Telegram bot token, WhatsApp webhook, Slack bot token
+4. **Secure storage** — credentials saved to `~/.rustclaw/.env` (mode 0600), never in config.toml
+5. **Validation** — tests each API key with a real API call
+
 ## Configuration
 
-Config lives at `~/.rustclaw/config.toml`. Secrets can reference env vars:
+- **Config:** `~/.rustclaw/config.toml` — non-secret settings (model, channels, cron)
+- **Secrets:** `~/.rustclaw/.env` — API keys loaded at runtime via dotenvy
+- **Workspace:** `~/.rustclaw/workspace/` — agent .md files and memory
 
-```toml
-[auth]
-anthropic_api_key = "env:ANTHROPIC_API_KEY"
-openai_api_key = "env:OPENAI_API_KEY"
-```
+Secrets are **never** stored in config.toml. They live in `.env` with 0600 permissions.
 
 ## Architecture
 

@@ -1,5 +1,5 @@
 use crate::auth;
-use crate::config::{Config, SlackConfig, resolve_secret};
+use crate::config::{Config, SlackConfig};
 use crate::workspace;
 use anyhow::Result;
 use axum::{
@@ -140,8 +140,12 @@ async fn send_slack_message(
 
 /// Run Slack events HTTP server (Events API mode).
 pub async fn run(cfg: &Config, sl: &SlackConfig) -> Result<()> {
-    let bot_token = resolve_secret(&sl.bot_token, "SLACK_BOT_TOKEN")
-        .ok_or_else(|| anyhow::anyhow!("Slack bot token not configured"))?;
+    let bot_token = sl
+        .bot_token
+        .clone()
+        .or_else(|| std::env::var("SLACK_BOT_TOKEN").ok())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("SLACK_BOT_TOKEN not set. Run `rustclaw init` or set the env var."))?;
 
     let state = Arc::new(AppState {
         cfg: cfg.clone(),

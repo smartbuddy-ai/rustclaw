@@ -40,16 +40,13 @@ fn default_state_dir() -> PathBuf {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AuthConfig {
-    /// Anthropic API key (or env: ANTHROPIC_API_KEY)
-    pub anthropic_api_key: Option<String>,
-    /// OpenAI API key (or env: OPENAI_API_KEY)
-    pub openai_api_key: Option<String>,
     /// Default model provider: "anthropic" or "openai"
     #[serde(default = "default_provider")]
     pub default_provider: String,
     /// Default model name
     #[serde(default = "default_model")]
     pub default_model: String,
+    // API keys are loaded from ~/.rustclaw/.env at runtime, never stored in config.toml
 }
 
 fn default_provider() -> String {
@@ -152,19 +149,6 @@ pub struct NodeConfig {
 
 fn default_beacon_interval() -> u64 {
     30
-}
-
-/// Resolve a secret: if value starts with "env:", read from environment.
-pub fn resolve_secret(value: &Option<String>, env_var: &str) -> Option<String> {
-    if let Some(v) = value {
-        if let Some(env_name) = v.strip_prefix("env:") {
-            std::env::var(env_name).ok()
-        } else {
-            Some(v.clone())
-        }
-    } else {
-        std::env::var(env_var).ok()
-    }
 }
 
 /// Load config from file, falling back to defaults.

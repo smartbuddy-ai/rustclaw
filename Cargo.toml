@@ -30,6 +30,8 @@ tokio-cron-scheduler = "0.13"
 cron = "0.15"
 directories = "6"
 libc = "0.2"
+dotenvy = "0.15"
+dialoguer = "0.11"
 
 [dev-dependencies]
 tokio-test = "0.4"

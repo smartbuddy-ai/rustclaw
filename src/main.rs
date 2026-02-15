@@ -4,6 +4,7 @@ mod chat;
 mod config;
 mod cron;
 mod nodes;
+mod setup;
 mod workspace;
 
 use clap::{Parser, Subcommand};
@@ -66,6 +67,12 @@ async fn main() -> anyhow::Result<()> {
         .with_target(false)
         .init();
 
+    // Load .env from ~/.rustclaw/.env (secrets live here, not in config.toml)
+    let env_path = directories::BaseDirs::new()
+        .map(|d| d.home_dir().join(".rustclaw/.env"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".rustclaw/.env"));
+    let _ = dotenvy::from_path(&env_path);
+
     let cli = Cli::parse();
     let cfg = config::load_config(cli.config.as_deref())?;
 
@@ -102,8 +109,7 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Commands::Init => {
-            workspace::init(&cfg)?;
-            println!("Workspace initialized at {}", cfg.workspace_dir.display());
+            setup::run_init(&cfg).await?;
         }
     }
 

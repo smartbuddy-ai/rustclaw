@@ -1,7 +1,7 @@
 pub mod anthropic;
 pub mod openai;
 
-use crate::config::{Config, resolve_secret};
+use crate::config::Config;
 use serde::{Deserialize, Serialize};
 
 /// Resolved API credentials.
@@ -35,14 +35,17 @@ pub struct Usage {
 }
 
 /// Resolve LLM auth from config + environment.
+/// API keys are loaded from env vars (populated by dotenvy from ~/.rustclaw/.env).
 pub fn resolve_auth(cfg: &Config) -> anyhow::Result<LlmAuth> {
     let provider = &cfg.auth.default_provider;
 
     match provider.as_str() {
         "anthropic" => {
-            let api_key = resolve_secret(&cfg.auth.anthropic_api_key, "ANTHROPIC_API_KEY")
+            let api_key = std::env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .filter(|s| !s.is_empty())
                 .ok_or_else(|| anyhow::anyhow!(
-                    "Anthropic API key not found. Set auth.anthropic_api_key in config or ANTHROPIC_API_KEY env var"
+                    "ANTHROPIC_API_KEY not set. Run `rustclaw init` or set the env var."
                 ))?;
             Ok(LlmAuth {
                 provider: "anthropic".into(),
@@ -52,9 +55,11 @@ pub fn resolve_auth(cfg: &Config) -> anyhow::Result<LlmAuth> {
             })
         }
         "openai" => {
-            let api_key = resolve_secret(&cfg.auth.openai_api_key, "OPENAI_API_KEY")
+            let api_key = std::env::var("OPENAI_API_KEY")
+                .ok()
+                .filter(|s| !s.is_empty())
                 .ok_or_else(|| anyhow::anyhow!(
-                    "OpenAI API key not found. Set auth.openai_api_key in config or OPENAI_API_KEY env var"
+                    "OPENAI_API_KEY not set. Run `rustclaw init` or set the env var."
                 ))?;
             Ok(LlmAuth {
                 provider: "openai".into(),
