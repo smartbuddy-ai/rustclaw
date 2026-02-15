@@ -26,6 +26,8 @@ struct Cli {
 enum Commands {
     /// Start the gateway daemon
     Start,
+    /// Start the gateway daemon (alias for start)
+    Run,
     /// Show status
     Status,
     /// Send a chat message
@@ -79,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
     let cfg = config::load_config(cli.config.as_deref())?;
 
     match cli.command {
-        Commands::Start => {
+        Commands::Start | Commands::Run => {
             tracing::info!("starting rustclaw gateway");
             gateway_start(cfg).await?;
         }
