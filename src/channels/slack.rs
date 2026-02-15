@@ -14,12 +14,14 @@ use std::sync::Arc;
 #[derive(Clone)]
 struct AppState {
     cfg: Config,
+    #[allow(dead_code)]
     sl: SlackConfig,
     bot_token: String,
     client: reqwest::Client,
 }
 
 /// Slack Events API payload.
+#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 enum SlackEvent {
@@ -29,6 +31,7 @@ enum SlackEvent {
     EventCallback { event: EventPayload },
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct EventPayload {
     #[serde(rename = "type")]

@@ -2,6 +2,10 @@ use crate::config::Config;
 use anyhow::Result;
 use std::fs;
 
+#[cfg(test)]
+#[path = "../workspace_test.rs"]
+mod workspace_test;
+
 /// Standard workspace files that make the agent work.
 const WORKSPACE_FILES: &[(&str, &str)] = &[
     ("AGENTS.md", include_str!("templates/AGENTS.md")),
@@ -30,13 +34,6 @@ pub fn ensure_workspace(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Initialize workspace (same as ensure, but logs to user).
-pub fn init(cfg: &Config) -> Result<()> {
-    ensure_workspace(cfg)?;
-    tracing::info!(dir = %cfg.workspace_dir.display(), "workspace initialized");
-    Ok(())
-}
-
 /// Read a workspace file by name.
 pub fn read_file(cfg: &Config, name: &str) -> Result<Option<String>> {
     let path = cfg.workspace_dir.join(name);
@@ -48,6 +45,7 @@ pub fn read_file(cfg: &Config, name: &str) -> Result<Option<String>> {
 }
 
 /// Write a workspace file.
+#[allow(dead_code)]
 pub fn write_file(cfg: &Config, name: &str, content: &str) -> Result<()> {
     let path = cfg.workspace_dir.join(name);
     if let Some(parent) = path.parent() {

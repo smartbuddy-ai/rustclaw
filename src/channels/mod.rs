@@ -5,6 +5,7 @@ pub mod slack;
 use serde::{Deserialize, Serialize};
 
 /// Inbound message from any channel.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InboundMessage {
     pub channel: String,
@@ -19,6 +20,7 @@ pub struct InboundMessage {
 }
 
 /// Outbound message to any channel.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct OutboundMessage {
     pub chat_id: String,

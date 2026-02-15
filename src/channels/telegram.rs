@@ -34,6 +34,7 @@ struct Message {
     chat: Chat,
     text: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     reply_to_message: Option<Box<Message>>,
     message_thread_id: Option<i64>,
 }
@@ -43,6 +44,7 @@ struct User {
     id: i64,
     first_name: String,
     last_name: Option<String>,
+    #[allow(dead_code)]
     username: Option<String>,
 }
 
@@ -50,6 +52,7 @@ struct User {
 struct Chat {
     id: i64,
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     chat_type: String,
 }
 

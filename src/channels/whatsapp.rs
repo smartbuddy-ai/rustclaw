@@ -54,10 +54,12 @@ struct ChangeValue {
 #[derive(Deserialize)]
 struct WaMessage {
     from: String,
+    #[allow(dead_code)]
     id: String,
     #[serde(rename = "type")]
     msg_type: String,
     text: Option<WaText>,
+    #[allow(dead_code)]
     timestamp: String,
 }
 
