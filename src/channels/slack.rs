@@ -1,6 +1,4 @@
-use crate::auth;
 use crate::config::{Config, SlackConfig};
-use crate::workspace;
 use anyhow::Result;
 use axum::{
     Router,
@@ -82,14 +80,9 @@ async fn handle_events(
                 if !text.is_empty() && !channel.is_empty() {
                     tracing::info!(channel = channel, text = text, "slack message");
 
-                    let system = workspace::build_system_prompt(&state.cfg).unwrap_or_default();
-                    let messages = vec![auth::ChatMessage {
-                        role: "user".into(),
-                        content: text.to_string(),
-                    }];
-
-                    let reply = match auth::complete(&state.cfg, &messages, Some(&system)).await {
-                        Ok(r) => r.content,
+                    let session_id = format!("slack:{}", channel);
+                    let reply = match crate::chat::send_with_session(&state.cfg, &session_id, text).await {
+                        Ok(r) => r,
                         Err(e) => {
                             tracing::error!(error = %e, "LLM error");
                             "⚠️ Error processing your message.".into()

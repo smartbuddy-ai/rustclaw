@@ -1,6 +1,4 @@
-use crate::auth;
 use crate::config::{Config, TelegramConfig};
-use crate::workspace;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -221,22 +219,16 @@ pub async fn run(cfg: &Config, tg: &TelegramConfig) -> Result<()> {
                 "received message"
             );
 
-            // Build system prompt from workspace
-            let system = workspace::build_system_prompt(cfg).unwrap_or_default();
+            // Use session-based chat for conversation history
+            let session_id = format!("telegram:{}", msg.chat.id);
 
-            // Simple single-turn completion
-            let messages = vec![auth::ChatMessage {
-                role: "user".into(),
-                content: text,
-            }];
-
-            match auth::complete(cfg, &messages, Some(&system)).await {
-                Ok(resp) => {
+            match crate::chat::send_with_session(cfg, &session_id, &text).await {
+                Ok(reply) => {
                     if let Err(e) = send_message(
                         &client,
                         &token,
                         msg.chat.id,
-                        &resp.content,
+                        &reply,
                         Some(msg.message_id),
                         msg.message_thread_id,
                     )

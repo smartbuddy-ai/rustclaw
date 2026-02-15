@@ -1,6 +1,4 @@
-use crate::auth;
 use crate::config::{Config, WhatsAppConfig};
-use crate::workspace;
 use anyhow::Result;
 use axum::{
     Router,
@@ -120,14 +118,9 @@ async fn handle_webhook(
 
                 tracing::info!(from = %msg.from, text = %text, "whatsapp message");
 
-                let system = workspace::build_system_prompt(&state.cfg).unwrap_or_default();
-                let messages = vec![auth::ChatMessage {
-                    role: "user".into(),
-                    content: text,
-                }];
-
-                let reply = match auth::complete(&state.cfg, &messages, Some(&system)).await {
-                    Ok(r) => r.content,
+                let session_id = format!("whatsapp:{}", msg.from);
+                let reply = match crate::chat::send_with_session(&state.cfg, &session_id, &text).await {
+                    Ok(r) => r,
                     Err(e) => {
                         tracing::error!(error = %e, "LLM error");
                         "⚠️ Error processing your message.".into()
