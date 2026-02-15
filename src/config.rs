@@ -124,6 +124,16 @@ fn bool_true() -> bool {
 pub struct CronConfig {
     #[serde(default)]
     pub jobs: Vec<CronJob>,
+    /// Enable automatic heartbeat job (runs HEARTBEAT.md tasks periodically)
+    #[serde(default)]
+    pub enable_heartbeat: bool,
+    /// Heartbeat interval in minutes (default: 30)
+    #[serde(default = "default_heartbeat_interval")]
+    pub heartbeat_interval_min: u32,
+}
+
+fn default_heartbeat_interval() -> u32 {
+    30
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

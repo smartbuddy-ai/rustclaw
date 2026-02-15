@@ -58,6 +58,8 @@ enum CronCommands {
     },
     /// Remove a cron job by ID
     Remove { id: String },
+    /// Test a cron job by manually executing it
+    Test { id: String },
 }
 
 #[tokio::main]
@@ -106,6 +108,11 @@ async fn main() -> anyhow::Result<()> {
             CronCommands::Remove { id } => {
                 cron::remove(&cfg, &id)?;
                 println!("Removed cron job: {id}");
+            }
+            CronCommands::Test { id } => {
+                println!("Executing cron job: {id}");
+                let response = cron::execute_job(&cfg, &id).await?;
+                println!("\n--- Response ---\n{response}");
             }
         },
         Commands::Init => {
