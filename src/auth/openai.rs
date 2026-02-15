@@ -42,7 +42,9 @@ pub async fn complete(
     messages: &[ChatMessage],
     system: Option<&str>,
 ) -> anyhow::Result<CompletionResponse> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()?;
 
     let mut msgs: Vec<OpenAiMessage> = Vec::new();
     if let Some(sys) = system {

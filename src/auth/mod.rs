@@ -1,7 +1,9 @@
 pub mod anthropic;
 pub mod openai;
+pub mod retry;
 
 use crate::config::Config;
+use retry::{RetryConfig, with_retry};
 use serde::{Deserialize, Serialize};
 
 /// Resolved API credentials.
@@ -72,16 +74,32 @@ pub fn resolve_auth(cfg: &Config) -> anyhow::Result<LlmAuth> {
     }
 }
 
-/// Send a chat completion request to the configured LLM.
+/// Send a chat completion request to the configured LLM with retry logic.
 pub async fn complete(
     cfg: &Config,
     messages: &[ChatMessage],
     system: Option<&str>,
 ) -> anyhow::Result<CompletionResponse> {
     let auth = resolve_auth(cfg)?;
-    match auth.provider.as_str() {
-        "anthropic" => anthropic::complete(&auth, messages, system).await,
-        "openai" => openai::complete(&auth, messages, system).await,
-        _ => unreachable!(),
-    }
+    let retry_config = RetryConfig::default();
+    
+    // Clone data for retry closure
+    let messages_vec = messages.to_vec();
+    let system_opt = system.map(String::from);
+    let auth_clone = auth.clone();
+
+    with_retry(&retry_config, || {
+        let auth = auth_clone.clone();
+        let messages = messages_vec.clone();
+        let system = system_opt.clone();
+        
+        async move {
+            match auth.provider.as_str() {
+                "anthropic" => anthropic::complete(&auth, &messages, system.as_deref()).await,
+                "openai" => openai::complete(&auth, &messages, system.as_deref()).await,
+                _ => unreachable!(),
+            }
+        }
+    })
+    .await
 }

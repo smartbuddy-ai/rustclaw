@@ -41,7 +41,9 @@ pub async fn complete(
     messages: &[ChatMessage],
     system: Option<&str>,
 ) -> anyhow::Result<CompletionResponse> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()?;
 
     let body = AnthropicRequest {
         model: auth.model.clone(),
