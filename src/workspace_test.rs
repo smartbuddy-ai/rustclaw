@@ -12,6 +12,10 @@ mod tests {
             channels: crate::config::ChannelsConfig::default(),
             cron: crate::config::CronConfig::default(),
             node: crate::config::NodeConfig::default(),
+            memory: crate::config::MemoryConfig::default(),
+            tunnel: crate::config::TunnelConfig::default(),
+            gateway: crate::config::GatewayConfig::default(),
+            tools: crate::config::ToolsConfig::default(),
         }
     }
 

@@ -108,6 +108,7 @@ pub async fn run_init(cfg: &Config) -> Result<()> {
                 Some(phone_id)
             },
             webhook_port: port,
+            app_secret: None,
         });
     }
 
@@ -158,10 +159,16 @@ pub async fn run_init(cfg: &Config) -> Result<()> {
             } else {
                 "claude-sonnet-4-20250514".into()
             },
+            reliability: config::ProviderReliabilityConfig::default(),
+            routes: vec![],
         },
         channels: channels_cfg,
         cron: config::CronConfig::default(),
         node: config::NodeConfig::default(),
+        memory: config::MemoryConfig::default(),
+        tunnel: config::TunnelConfig::default(),
+        gateway: config::GatewayConfig::default(),
+        tools: config::ToolsConfig::default(),
     };
 
     let config_path = rustclaw_dir.join("config.toml");

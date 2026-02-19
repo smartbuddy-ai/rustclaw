@@ -50,9 +50,42 @@ struct PostMessageBody {
     thread_ts: Option<String>,
 }
 
-async fn handle_events(
+fn verify_slack_request(headers: &axum::http::HeaderMap, body: &str, sl: &SlackConfig) -> bool {
+    let Some(signing_secret) = sl.signing_secret.as_deref() else {
+        return true; // No secret configured = skip verification
+    };
+
+    let timestamp = headers
+        .get("x-slack-request-timestamp")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(0);
+
+    let signature = headers
+        .get("x-slack-signature")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    crate::guardd::channel_auth::verify_slack_signature(signing_secret, timestamp, body, signature)
+        .unwrap_or(false)
+}
+
+async fn handle_events_raw(
     State(state): State<Arc<AppState>>,
-    axum::Json(event): axum::Json<serde_json::Value>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<axum::Json<serde_json::Value>, StatusCode> {
+    let raw = String::from_utf8_lossy(&body).to_string();
+    if !verify_slack_request(&headers, &raw, &state.sl) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let event: serde_json::Value = serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    handle_events_inner(state, event).await
+}
+
+async fn handle_events_inner(
+    state: Arc<AppState>,
+    event: serde_json::Value,
 ) -> Result<axum::Json<serde_json::Value>, StatusCode> {
     // Handle url_verification
     if event.get("type").and_then(|t| t.as_str()) == Some("url_verification") {
@@ -151,7 +184,7 @@ pub async fn run(cfg: &Config, sl: &SlackConfig) -> Result<()> {
     });
 
     let app = Router::new()
-        .route("/slack/events", post(handle_events))
+        .route("/slack/events", post(handle_events_raw))
         .with_state(state);
 
     let addr = "0.0.0.0:8091";

@@ -13,10 +13,16 @@ async fn test_workspace_initialization() {
         auth: rustclaw::config::AuthConfig {
             default_provider: "anthropic".into(),
             default_model: "claude-sonnet-4-20250514".into(),
+            reliability: rustclaw::config::ProviderReliabilityConfig::default(),
+            routes: vec![],
         },
         channels: rustclaw::config::ChannelsConfig::default(),
         cron: rustclaw::config::CronConfig::default(),
         node: rustclaw::config::NodeConfig::default(),
+        memory: rustclaw::config::MemoryConfig::default(),
+        tunnel: rustclaw::config::TunnelConfig::default(),
+        gateway: rustclaw::config::GatewayConfig::default(),
+        tools: rustclaw::config::ToolsConfig::default(),
     };
 
     // Ensure workspace files are created
@@ -45,6 +51,10 @@ async fn test_system_prompt_building() {
         channels: rustclaw::config::ChannelsConfig::default(),
         cron: rustclaw::config::CronConfig::default(),
         node: rustclaw::config::NodeConfig::default(),
+        memory: rustclaw::config::MemoryConfig::default(),
+        tunnel: rustclaw::config::TunnelConfig::default(),
+        gateway: rustclaw::config::GatewayConfig::default(),
+        tools: rustclaw::config::ToolsConfig::default(),
     };
 
     rustclaw::workspace::ensure_workspace(&cfg).unwrap();
@@ -89,10 +99,16 @@ fn test_config_roundtrip() {
         auth: rustclaw::config::AuthConfig {
             default_provider: "anthropic".into(),
             default_model: "claude-3-5-sonnet".into(),
+            reliability: rustclaw::config::ProviderReliabilityConfig::default(),
+            routes: vec![],
         },
         channels: rustclaw::config::ChannelsConfig::default(),
         cron: rustclaw::config::CronConfig::default(),
         node: rustclaw::config::NodeConfig::default(),
+        memory: rustclaw::config::MemoryConfig::default(),
+        tunnel: rustclaw::config::TunnelConfig::default(),
+        gateway: rustclaw::config::GatewayConfig::default(),
+        tools: rustclaw::config::ToolsConfig::default(),
     };
 
     // Serialize to TOML
@@ -123,6 +139,10 @@ async fn test_cron_job_lifecycle() {
             heartbeat_interval_min: 30,
         },
         node: rustclaw::config::NodeConfig::default(),
+        memory: rustclaw::config::MemoryConfig::default(),
+        tunnel: rustclaw::config::TunnelConfig::default(),
+        gateway: rustclaw::config::GatewayConfig::default(),
+        tools: rustclaw::config::ToolsConfig::default(),
     };
 
     // Save initial config

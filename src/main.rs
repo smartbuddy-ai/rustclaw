@@ -1,10 +1,21 @@
+mod agent;
 mod auth;
 mod channels;
 mod chat;
 mod config;
 mod cron;
+mod gateway;
+mod guardd;
+mod heartbeat;
+mod memory;
 mod nodes;
+mod providers;
+mod sessions;
 mod setup;
+mod skills;
+mod telemetry;
+mod tui;
+mod tunnel;
 mod workspace;
 
 use clap::{Parser, Subcommand};
@@ -45,6 +56,10 @@ enum Commands {
     },
     /// Initialize workspace files
     Init,
+    /// Launch the interactive TUI dashboard
+    Tui,
+    /// Validate configuration and check system health
+    Doctor,
 }
 
 #[derive(Subcommand)]
@@ -120,6 +135,12 @@ async fn main() -> anyhow::Result<()> {
         Commands::Init => {
             setup::run_init(&cfg).await?;
         }
+        Commands::Tui => {
+            tui::run_tui()?;
+        }
+        Commands::Doctor => {
+            doctor_check(&cfg).await?;
+        }
     }
 
     Ok(())
@@ -127,64 +148,128 @@ async fn main() -> anyhow::Result<()> {
 
 async fn gateway_start(cfg: config::Config) -> anyhow::Result<()> {
     use tokio::signal;
+    use tokio_util::sync::CancellationToken;
 
     // Boot workspace files
     workspace::ensure_workspace(&cfg)?;
 
-    // Start channel listeners
-    let mut handles = Vec::new();
-
-    if let Some(ref tg) = cfg.channels.telegram {
-        if tg.enabled {
-            let tg = tg.clone();
-            let cfg2 = cfg.clone();
-            handles.push(tokio::spawn(async move {
-                if let Err(e) = channels::telegram::run(&cfg2, &tg).await {
-                    tracing::error!(channel = "telegram", error = %e, "channel exited");
-                }
-            }));
-        }
-    }
-
-    if let Some(ref wa) = cfg.channels.whatsapp {
-        if wa.enabled {
-            let wa = wa.clone();
-            let cfg2 = cfg.clone();
-            handles.push(tokio::spawn(async move {
-                if let Err(e) = channels::whatsapp::run(&cfg2, &wa).await {
-                    tracing::error!(channel = "whatsapp", error = %e, "channel exited");
-                }
-            }));
-        }
-    }
-
-    if let Some(ref sl) = cfg.channels.slack {
-        if sl.enabled {
-            let sl = sl.clone();
-            let cfg2 = cfg.clone();
-            handles.push(tokio::spawn(async move {
-                if let Err(e) = channels::slack::run(&cfg2, &sl).await {
-                    tracing::error!(channel = "slack", error = %e, "channel exited");
-                }
-            }));
-        }
-    }
+    // Start enabled channels via channel router
+    let handles = channels::start_enabled_channels(&cfg);
 
     // Start cron scheduler
     let scheduler = cron::start_scheduler(&cfg).await?;
+
+    // BUG-02: Use CancellationToken for graceful shutdown instead of abort()
+    let cancel = CancellationToken::new();
+    let gateway_cfg = cfg.clone();
+    let gateway_cancel = cancel.clone();
+    let gateway_handle = tokio::spawn(async move {
+        if let Err(e) = gateway::run_with_shutdown(gateway_cfg, gateway_cancel).await {
+            tracing::error!(error = %e, "gateway server exited");
+        }
+    });
 
     // Start node presence beacon
     let beacon = nodes::start_beacon(&cfg).await;
 
     tracing::info!("rustclaw gateway running — press Ctrl+C to stop");
     signal::ctrl_c().await?;
-    tracing::info!("shutting down");
+    tracing::info!("graceful shutdown initiated");
 
+    // Graceful shutdown: drain in-flight work
+    tracing::info!("stopping cron scheduler");
     drop(scheduler);
+    tracing::info!("stopping node beacon");
     drop(beacon);
+
+    // Signal gateway to stop accepting new connections and drain in-flight requests
+    tracing::info!("stopping gateway (graceful drain)");
+    cancel.cancel();
+
+    // Wait up to 30s for gateway to finish draining
+    let drain_timeout = std::time::Duration::from_secs(30);
+    if tokio::time::timeout(drain_timeout, gateway_handle).await.is_err() {
+        tracing::warn!("gateway drain timed out after 30s, forcing shutdown");
+    }
+
+    tracing::info!("stopping channel handlers");
     for h in handles {
         h.abort();
     }
+    // Flush audit logs
+    tracing::info!("shutdown complete");
 
+    Ok(())
+}
+
+async fn doctor_check(cfg: &config::Config) -> anyhow::Result<()> {
+    println!("🩺 Rustclaw Doctor");
+    println!("==================\n");
+
+    // Config check
+    print!("Config file ............ ");
+    println!("✅ loaded");
+
+    // Workspace
+    print!("Workspace .............. ");
+    if cfg.workspace_dir.exists() {
+        println!("✅ {}", cfg.workspace_dir.display());
+    } else {
+        println!("⚠️  missing (run `rustclaw init`)");
+    }
+
+    // Memory DB
+    print!("Memory DB .............. ");
+    match memory::SqliteMemory::from_config(cfg) {
+        Ok(mem) => {
+            let count = mem.search("", 10_000).map(|r| r.len()).unwrap_or(0);
+            println!("✅ {} entries", count);
+        }
+        Err(e) => println!("❌ {e}"),
+    }
+
+    // Channels
+    println!("\nChannels:");
+    if let Some(tg) = &cfg.channels.telegram {
+        print!("  Telegram ............. ");
+        if tg.bot_token.is_some() || std::env::var("TELEGRAM_BOT_TOKEN").is_ok() {
+            println!("✅ configured");
+        } else {
+            println!("⚠️  no bot token");
+        }
+    }
+    if let Some(wa) = &cfg.channels.whatsapp {
+        print!("  WhatsApp ............. ");
+        if wa.access_token.is_some() || std::env::var("WHATSAPP_ACCESS_TOKEN").is_ok() {
+            println!("✅ configured");
+        } else {
+            println!("⚠️  no access token");
+        }
+    }
+    if let Some(sl) = &cfg.channels.slack {
+        print!("  Slack ................ ");
+        if sl.bot_token.is_some() || std::env::var("SLACK_BOT_TOKEN").is_ok() {
+            println!("✅ configured");
+        } else {
+            println!("⚠️  no bot token");
+        }
+        if sl.signing_secret.is_none() && std::env::var("SLACK_SIGNING_SECRET").is_err() {
+            println!("  ⚠️  No signing secret — webhook auth disabled!");
+        }
+    }
+
+    // Gateway
+    println!("\nGateway:");
+    print!("  Auth mode ............ ");
+    println!("{}", if cfg.gateway.auth.mode == "none" { "⚠️  none (set to 'token' for production)" } else { "✅ token" });
+    print!("  Rate limiting ........ ");
+    println!("{}", if cfg.gateway.rate_limit.enabled { "✅ enabled" } else { "⚠️  disabled" });
+
+    // Provider
+    println!("\nProviders:");
+    print!("  Default .............. ");
+    println!("{} / {}", cfg.auth.default_provider, cfg.auth.default_model);
+
+    println!("\n✅ Doctor check complete.");
     Ok(())
 }

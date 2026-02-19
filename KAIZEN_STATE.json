@@ -1,0 +1,8 @@
+{
+  "project": "rustclaw",
+  "currentCycle": 0,
+  "bestMetric": null,
+  "metricName": "test pass rate + reliability",
+  "lastExperiment": null,
+  "status": "initialized"
+}

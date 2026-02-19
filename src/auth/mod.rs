@@ -3,7 +3,7 @@ pub mod openai;
 pub mod retry;
 
 use crate::config::Config;
-use retry::{RetryConfig, with_retry};
+// retry kept in module for legacy compatibility
 use serde::{Deserialize, Serialize};
 
 /// Resolved API credentials.
@@ -43,12 +43,7 @@ pub fn resolve_auth(cfg: &Config) -> anyhow::Result<LlmAuth> {
 
     match provider.as_str() {
         "anthropic" => {
-            let api_key = std::env::var("ANTHROPIC_API_KEY")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .ok_or_else(|| anyhow::anyhow!(
-                    "ANTHROPIC_API_KEY not set. Run `rustclaw init` or set the env var."
-                ))?;
+            let api_key = resolve_api_key("ANTHROPIC_API_KEY", "anthropic_api_key")?;
             Ok(LlmAuth {
                 provider: "anthropic".into(),
                 model: cfg.auth.default_model.clone(),
@@ -57,12 +52,7 @@ pub fn resolve_auth(cfg: &Config) -> anyhow::Result<LlmAuth> {
             })
         }
         "openai" => {
-            let api_key = std::env::var("OPENAI_API_KEY")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .ok_or_else(|| anyhow::anyhow!(
-                    "OPENAI_API_KEY not set. Run `rustclaw init` or set the env var."
-                ))?;
+            let api_key = resolve_api_key("OPENAI_API_KEY", "openai_api_key")?;
             Ok(LlmAuth {
                 provider: "openai".into(),
                 model: cfg.auth.default_model.clone(),
@@ -74,32 +64,54 @@ pub fn resolve_auth(cfg: &Config) -> anyhow::Result<LlmAuth> {
     }
 }
 
+/// BUG-06: Resolve an API key by trying env var first, then credential store as fallback.
+/// Order: 1) env var, 2) credential store (guardd AES-GCM encrypted).
+pub fn resolve_api_key(env_var: &str, cred_name: &str) -> anyhow::Result<String> {
+    // Try environment variable first
+    if let Ok(val) = std::env::var(env_var) {
+        if !val.is_empty() {
+            return Ok(val);
+        }
+    }
+
+    // Fallback to credential store
+    let cred_path = directories::BaseDirs::new()
+        .map(|d| d.home_dir().join(".rustclaw/credentials.json"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".rustclaw/credentials.json"));
+
+    let key_path = directories::BaseDirs::new()
+        .map(|d| d.home_dir().join(".rustclaw/.cred_key"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".rustclaw/.cred_key"));
+
+    if cred_path.exists() && key_path.exists() {
+        if let Ok(key_bytes) = std::fs::read(&key_path) {
+            if key_bytes.len() == 32 {
+                let key = crate::guardd::credentials::Secret::new(key_bytes);
+                if let Ok(store) = crate::guardd::credentials::CredentialStore::new(cred_path, key) {
+                    if let Ok(Some(secret)) = store.retrieve(cred_name) {
+                        if let Ok(val) = String::from_utf8(secret.as_bytes().to_vec()) {
+                            if !val.is_empty() {
+                                return Ok(val);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    anyhow::bail!("{env_var} not set and not found in credential store. Run `rustclaw init` or set the env var.")
+}
+
 /// Send a chat completion request to the configured LLM with retry logic.
 pub async fn complete(
     cfg: &Config,
     messages: &[ChatMessage],
     system: Option<&str>,
 ) -> anyhow::Result<CompletionResponse> {
-    let auth = resolve_auth(cfg)?;
-    let retry_config = RetryConfig::default();
-    
-    // Clone data for retry closure
-    let messages_vec = messages.to_vec();
-    let system_opt = system.map(String::from);
-    let auth_clone = auth.clone();
-
-    with_retry(&retry_config, || {
-        let auth = auth_clone.clone();
-        let messages = messages_vec.clone();
-        let system = system_opt.clone();
-        
-        async move {
-            match auth.provider.as_str() {
-                "anthropic" => anthropic::complete(&auth, &messages, system.as_deref()).await,
-                "openai" => openai::complete(&auth, &messages, system.as_deref()).await,
-                _ => unreachable!(),
-            }
-        }
-    })
-    .await
+    // Ported architecture from zeroclaw src/providers/reliable.rs + router.rs
+    let router = crate::providers::ReliableRouter::from_config(cfg);
+    router
+        .complete(cfg, messages, system, Some(&cfg.auth.default_model))
+        .await
 }

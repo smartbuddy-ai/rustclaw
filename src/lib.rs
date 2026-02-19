@@ -1,9 +1,20 @@
 // Public modules for integration testing
+pub mod agent;
 pub mod auth;
 pub mod channels;
 pub mod chat;
 pub mod config;
 pub mod cron;
+pub mod gateway;
+pub mod guardd;
+pub mod heartbeat;
+pub mod memory;
 pub mod nodes;
+pub mod providers;
+pub mod sessions;
 pub mod setup;
+pub mod skills;
+pub mod telemetry;
+pub mod tools;
+pub mod tunnel;
 pub mod workspace;

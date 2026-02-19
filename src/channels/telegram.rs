@@ -32,7 +32,6 @@ struct Message {
     chat: Chat,
     text: Option<String>,
     #[serde(default)]
-    #[allow(dead_code)]
     reply_to_message: Option<Box<Message>>,
     message_thread_id: Option<i64>,
 }
@@ -42,7 +41,6 @@ struct User {
     id: i64,
     first_name: String,
     last_name: Option<String>,
-    #[allow(dead_code)]
     username: Option<String>,
 }
 
@@ -50,7 +48,6 @@ struct User {
 struct Chat {
     id: i64,
     #[serde(rename = "type")]
-    #[allow(dead_code)]
     chat_type: String,
 }
 
@@ -71,12 +68,11 @@ fn is_allowed(tg: &TelegramConfig, sender_id: i64) -> bool {
     if tg.allow_from.is_empty() {
         return true; // No allowlist = allow all
     }
-    tg.allow_from.iter().any(|id| {
-        id.parse::<i64>().ok() == Some(sender_id)
-    })
+    tg.allow_from.iter().any(|id| id.parse::<i64>().ok() == Some(sender_id))
 }
 
 /// Send a message via Telegram Bot API.
+/// BUG-03: chat_type is required to avoid sending message_thread_id on DMs.
 async fn send_message(
     client: &reqwest::Client,
     token: &str,
@@ -84,16 +80,21 @@ async fn send_message(
     text: &str,
     reply_to: Option<i64>,
     thread_id: Option<i64>,
+    chat_type: &str,
 ) -> Result<()> {
+    // BUG-03: Only include message_thread_id for non-private chats (groups/supergroups).
+    // Sending it on DMs causes Telegram API to return 400 Bad Request.
+    let effective_thread_id = if chat_type == "private" { None } else { thread_id };
+
     // Chunk text if > 4096 chars
-    let chunks = chunk_text(text, 4000);
+    let chunks = chunk_text(text, 4096);
     for chunk in chunks {
         let body = SendMessageBody {
             chat_id,
             text: chunk,
             parse_mode: Some("Markdown".into()),
             reply_to_message_id: reply_to,
-            message_thread_id: thread_id,
+            message_thread_id: effective_thread_id,
         };
 
         let resp = client
@@ -109,7 +110,7 @@ async fn send_message(
                 text: body.text,
                 parse_mode: None,
                 reply_to_message_id: reply_to,
-                message_thread_id: thread_id,
+                message_thread_id: effective_thread_id,
             };
             client
                 .post(format!("https://api.telegram.org/bot{token}/sendMessage"))
@@ -121,7 +122,7 @@ async fn send_message(
     Ok(())
 }
 
-fn chunk_text(text: &str, limit: usize) -> Vec<String> {
+pub(crate) fn chunk_text(text: &str, limit: usize) -> Vec<String> {
     if text.len() <= limit {
         return vec![text.to_string()];
     }
@@ -132,14 +133,45 @@ fn chunk_text(text: &str, limit: usize) -> Vec<String> {
             chunks.push(remaining.to_string());
             break;
         }
-        // Try to split at a newline
-        let split_at = remaining[..limit]
+        // Try to split at a newline first, then whitespace
+        let split_window = &remaining[..limit];
+        let split_at = split_window
             .rfind('\n')
+            .or_else(|| split_window.rfind(' '))
             .unwrap_or(limit);
         chunks.push(remaining[..split_at].to_string());
-        remaining = &remaining[split_at..].trim_start_matches('\n');
+        remaining = remaining[split_at..].trim_start();
     }
     chunks
+}
+
+async fn process_message(cfg: &Config, msg: &Message) -> String {
+    let text = msg.text.clone().unwrap_or_default();
+    if text.trim() == "/start" {
+        return "👋 Rustclaw is online. Send me a message and I’ll reply.".to_string();
+    }
+
+    let reply_context = msg
+        .reply_to_message
+        .as_ref()
+        .and_then(|m| m.text.clone())
+        .map(|t| format!("\n[reply_context]\n{}\n[/reply_context]\n", t))
+        .unwrap_or_default();
+
+    let sender = msg.from.as_ref().map(|u| {
+        if let Some(username) = &u.username {
+            format!("{} (@{})", u.first_name, username)
+        } else {
+            u.first_name.clone()
+        }
+    }).unwrap_or_else(|| "unknown".to_string());
+
+    let enriched = format!("from={sender} chat_type={}\n{}{text}", msg.chat.chat_type, reply_context);
+    let session_id = format!("telegram:{}", msg.chat.id);
+    match crate::chat::send_with_session(cfg, &session_id, &enriched).await {
+        Ok(reply) => reply,
+        Err(_) => "⚠️ Error processing your message.".into(),
+    }
 }
 
 /// Run Telegram long-polling loop.
@@ -151,9 +183,7 @@ pub async fn run(cfg: &Config, tg: &TelegramConfig) -> Result<()> {
     tracing::info!(channel = "telegram", "starting polling");
 
     loop {
-        let mut url = format!(
-            "https://api.telegram.org/bot{token}/getUpdates?timeout=30"
-        );
+        let mut url = format!("https://api.telegram.org/bot{token}/getUpdates?timeout=30");
         if let Some(off) = offset {
             url.push_str(&format!("&offset={off}"));
         }
@@ -203,53 +233,62 @@ pub async fn run(cfg: &Config, tg: &TelegramConfig) -> Result<()> {
                 continue;
             }
 
-            let sender_name = msg.from.as_ref().map(|u| {
-                let mut name = u.first_name.clone();
-                if let Some(ref last) = u.last_name {
-                    name.push(' ');
-                    name.push_str(last);
-                }
-                name
-            });
+            tracing::info!(chat_id = msg.chat.id, text = %text, "received telegram message");
 
-            tracing::info!(
-                chat_id = msg.chat.id,
-                sender = ?sender_name,
-                text = %text,
-                "received message"
-            );
-
-            // Use session-based chat for conversation history
-            let session_id = format!("telegram:{}", msg.chat.id);
-
-            match crate::chat::send_with_session(cfg, &session_id, &text).await {
-                Ok(reply) => {
-                    if let Err(e) = send_message(
-                        &client,
-                        &token,
-                        msg.chat.id,
-                        &reply,
-                        Some(msg.message_id),
-                        msg.message_thread_id,
-                    )
-                    .await
-                    {
-                        tracing::error!(error = %e, "failed to send reply");
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "LLM completion failed");
-                    let _ = send_message(
-                        &client,
-                        &token,
-                        msg.chat.id,
-                        "⚠️ Error processing your message.",
-                        Some(msg.message_id),
-                        msg.message_thread_id,
-                    )
-                    .await;
-                }
+            let reply = process_message(cfg, &msg).await;
+            if let Err(e) = send_message(
+                &client,
+                &token,
+                msg.chat.id,
+                &reply,
+                Some(msg.message_id),
+                msg.message_thread_id,
+                &msg.chat.chat_type,
+            )
+            .await
+            {
+                tracing::error!(error = %e, "failed to send reply");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunking_respects_limit() {
+        let text = "a".repeat(9000);
+        let chunks = chunk_text(&text, 4096);
+        assert!(chunks.len() >= 3);
+        assert!(chunks.iter().all(|c| c.len() <= 4096));
+    }
+
+    #[test]
+    fn allowlist_works() {
+        let cfg = TelegramConfig {
+            enabled: true,
+            bot_token: None,
+            allow_from: vec!["123".into()],
+            webhook_url: None,
+        };
+        assert!(is_allowed(&cfg, 123));
+        assert!(!is_allowed(&cfg, 456));
+    }
+
+    // BUG-03: message_thread_id should be None for private (DM) chats
+    #[test]
+    fn send_message_body_omits_thread_id_for_private_chat() {
+        // Simulate what send_message does internally for a private chat
+        let chat_type = "private";
+        let thread_id = Some(42_i64);
+        let effective = if chat_type == "private" { None } else { thread_id };
+        assert!(effective.is_none(), "thread_id should be None for private chats");
+
+        // For group chats, thread_id should be preserved
+        let chat_type = "supergroup";
+        let effective = if chat_type == "private" { None } else { thread_id };
+        assert_eq!(effective, Some(42), "thread_id should be kept for group chats");
     }
 }

@@ -1,9 +1,11 @@
 use crate::config::{Config, WhatsAppConfig};
+use crate::guardd::channel_auth::verify_whatsapp_signature;
 use anyhow::Result;
 use axum::{
     Router,
+    body::Bytes,
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -52,12 +54,10 @@ struct ChangeValue {
 #[derive(Deserialize)]
 struct WaMessage {
     from: String,
-    #[allow(dead_code)]
     id: String,
     #[serde(rename = "type")]
     msg_type: String,
     text: Option<WaText>,
-    #[allow(dead_code)]
     timestamp: String,
 }
 
@@ -85,19 +85,47 @@ async fn verify_webhook(
     Query(q): Query<VerifyQuery>,
 ) -> Result<String, StatusCode> {
     let expected = state.wa.verify_token.as_deref().unwrap_or("rustclaw");
-    if q.mode.as_deref() == Some("subscribe")
-        && q.verify_token.as_deref() == Some(expected)
-    {
+    if q.mode.as_deref() == Some("subscribe") && q.verify_token.as_deref() == Some(expected) {
         Ok(q.challenge.unwrap_or_default())
     } else {
         Err(StatusCode::FORBIDDEN)
     }
 }
 
+fn verify_signature(headers: &HeaderMap, body: &str, wa: &WhatsAppConfig) -> bool {
+    let Some(app_secret) = wa.app_secret.as_deref() else {
+        return true;
+    };
+
+    let signature = headers
+        .get("x-hub-signature-256")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let timestamp = headers
+        .get("x-timestamp")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or_else(|| chrono::Utc::now().timestamp());
+
+    verify_whatsapp_signature(app_secret, timestamp, body, signature).unwrap_or(false)
+}
+
 async fn handle_webhook(
     State(state): State<Arc<AppState>>,
-    axum::Json(payload): axum::Json<WebhookPayload>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> StatusCode {
+    let raw = String::from_utf8_lossy(&body).to_string();
+    if !verify_signature(&headers, &raw, &state.wa) {
+        return StatusCode::UNAUTHORIZED;
+    }
+
+    let payload: WebhookPayload = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(_) => return StatusCode::BAD_REQUEST,
+    };
+
     let entries = match payload.entry {
         Some(e) => e,
         None => return StatusCode::OK,
@@ -116,7 +144,7 @@ async fn handle_webhook(
                     None => continue,
                 };
 
-                tracing::info!(from = %msg.from, text = %text, "whatsapp message");
+                tracing::info!(from = %msg.from, id = %msg.id, ts = %msg.timestamp, text = %text, "whatsapp message");
 
                 let session_id = format!("whatsapp:{}", msg.from);
                 let reply = match crate::chat::send_with_session(&state.cfg, &session_id, &text).await {
@@ -144,10 +172,11 @@ async fn send_wa_message(
     to: &str,
     text: &str,
 ) -> Result<()> {
-    let phone_id = wa.phone_number_id.as_deref()
+    let phone_id = wa
+        .phone_number_id
+        .as_deref()
         .ok_or_else(|| anyhow::anyhow!("WhatsApp phone_number_id not configured"))?;
-    let api_url = wa.api_url.as_deref()
-        .unwrap_or("https://graph.facebook.com/v21.0");
+    let api_url = wa.api_url.as_deref().unwrap_or("https://graph.facebook.com/v21.0");
 
     let body = SendTextBody {
         messaging_product: "whatsapp".into(),
@@ -156,12 +185,16 @@ async fn send_wa_message(
         text: TextBody { body: text.into() },
     };
 
-    client
+    let resp = client
         .post(format!("{api_url}/{phone_id}/messages"))
         .bearer_auth(token)
         .json(&body)
         .send()
         .await?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("WhatsApp send failed with {}", resp.status());
+    }
 
     Ok(())
 }
@@ -183,8 +216,8 @@ pub async fn run(cfg: &Config, wa: &WhatsAppConfig) -> Result<()> {
     });
 
     let app = Router::new()
-        .route("/webhook", get(verify_webhook))
-        .route("/webhook", post(handle_webhook))
+        .route("/webhook/whatsapp", get(verify_webhook))
+        .route("/webhook/whatsapp", post(handle_webhook))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", wa.webhook_port);
@@ -194,4 +227,23 @@ pub async fn run(cfg: &Config, wa: &WhatsAppConfig) -> Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_signature_disabled_without_secret() {
+        let wa = WhatsAppConfig {
+            enabled: true,
+            api_url: None,
+            access_token: None,
+            verify_token: None,
+            phone_number_id: None,
+            webhook_port: 8090,
+            app_secret: None,
+        };
+        assert!(verify_signature(&HeaderMap::new(), "{}", &wa));
+    }
 }
