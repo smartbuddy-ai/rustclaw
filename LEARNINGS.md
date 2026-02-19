@@ -125,3 +125,11 @@
   - Documentation: ARCHITECTURE.md, DEPLOYMENT.md, SECURITY.md
 - **Leçon**: Pour une montée en qualité rapide, cibler les gaps mesurés (comparaison structurée) et implémenter module par module avec tests systématiques est plus efficace qu'une approche "tout d'un coup".
 - **Scores mis à jour**: Feature 7.6→9.0, Security 7.2→9.0, Test 7.5→9.0, Prod-readiness 6.8→8.5
+
+## 2026-02-19 — Sprint Final: Streaming + BUG-06 + Wiring + Telegram
+- **BUG-06 lesson**: The order of credential resolution matters. Encrypted store must ALWAYS be checked before plaintext env vars. The original code had it backwards.
+- **Streaming architecture**: SSE parsing is straightforward with a line-based parser + event type dispatch. Using `bytes_stream()` from reqwest + tokio spawn works well for async streaming.
+- **Module wiring**: Having modules exist but not be wired into the runtime is a hidden debt. The gateway_start function is the single place where all subsystems must be initialized.
+- **Telegram inline buttons**: reply_markup field must be Optional and skip_serializing_if = None to avoid breaking regular messages.
+- **Voice transcription**: The Whisper CLI pipeline (getFile → download → whisper → read txt) is simple but fragile. Need to handle missing whisper binary gracefully.
+- **Test count**: 293 → 317. Every feature got tests before commit.

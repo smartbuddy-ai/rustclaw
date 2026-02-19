@@ -96,6 +96,17 @@
 - All tests passing
 - Notes: Critical bug sweep complete — rustclaw now stable post B→K modules
 
+## [2026-02-19 04:30] Sprint Final — Streaming + BUG-06 + Wiring + Telegram Features
+- Status: ✅ 317 tests pass, cargo build --release OK, pushed to main
+- What was done:
+  1. **BUG-06 fix**: CredentialStore now takes priority over env::var (flipped order)
+  2. **Streaming LLM**: Full SSE streaming module for Anthropic + OpenAI (stream_anthropic, stream_openai, collect_stream)
+  3. **Module wiring**: Tunnel, sessions (SQLite), skills (SkillRegistry) wired into gateway_start
+  4. **Telegram inline buttons**: InlineKeyboardMarkup, InlineKeyboardButton, callback query handler
+  5. **Voice note transcription**: getFile → download → Whisper CLI → transcript into conversation
+- Tests added: 24 new tests (293 → 317)
+- Commits: 4 atomic commits, all pushed
+
 ## [2026-02-18 16:10] Features Sprint — URL allowlists, DDG fallback, cron upgrades, safety features
 - Status: ✅ cargo clippy: 0 errors, 150 tests pass
 - Features shipped:
