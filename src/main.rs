@@ -13,6 +13,7 @@ mod providers;
 mod sessions;
 mod setup;
 mod skills;
+mod streaming;
 mod telemetry;
 mod tui;
 mod tunnel;

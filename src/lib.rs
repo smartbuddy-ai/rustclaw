@@ -14,6 +14,7 @@ pub mod providers;
 pub mod sessions;
 pub mod setup;
 pub mod skills;
+pub mod streaming;
 pub mod telemetry;
 pub mod tools;
 pub mod tunnel;
