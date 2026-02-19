@@ -172,6 +172,10 @@ async fn gateway_start(cfg: config::Config) -> anyhow::Result<()> {
         Err(e) => tracing::warn!(error = %e, "session persistence unavailable"),
     }
 
+    // Initialize telemetry/metrics
+    let _telemetry = telemetry::Telemetry::new();
+    tracing::info!("telemetry initialized (Prometheus metrics available)");
+
     // Scan and register skills
     let skill_registry = skills::SkillRegistry::scan(&cfg.workspace_dir).unwrap_or_default();
     let skill_count = skill_registry.list().len();
