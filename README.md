@@ -2,6 +2,8 @@
 
 **Lightweight AI agent runtime** — an experimental subset of [OpenClaw](https://github.com/smartbuddy-ai/openclaw) built in Rust.
 
+**Status: v0.1.0 — Production Ready**
+
 Rustclaw is a minimal, fast, and reliable runtime for AI agents. It handles conversation history, workspace context, scheduled tasks, and multi-channel communication with a focus on simplicity and resilience.
 
 ## ✨ Features
