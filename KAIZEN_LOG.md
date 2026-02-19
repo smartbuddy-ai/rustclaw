@@ -118,3 +118,14 @@
   - Channel watchdog
   - Sonnet 4.6 model alias
 - Notes: Feature sprint on top of BUG-01→07 fixes — rustclaw now at 150 tests
+
+
+## v0.1.0 Release QA — 2026-02-19
+
+- **317 tests**: all passing, 0 failures
+- **Build**: clean release build, 92 warnings (non-blocking), 0 clippy errors
+- **Bug found & fixed**: Telemetry module was declared but not initialized in main.rs → wired `Telemetry::new()` 
+- **All modules verified**: gateway (9), security (8), tools (10), integration (5), streaming, credential, inline, voice
+- **Config loading**: functional with minimal TOML config
+- **main.rs wiring confirmed**: tunnel, sessions SQLite, SkillRegistry, telemetry/Prometheus
+- **Verdict: READY** — tagged v0.1.0 and pushed
