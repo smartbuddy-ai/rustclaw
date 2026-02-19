@@ -154,6 +154,31 @@ async fn gateway_start(cfg: config::Config) -> anyhow::Result<()> {
     // Boot workspace files
     workspace::ensure_workspace(&cfg)?;
 
+    // Start tunnel if configured (Tailscale/Cloudflare/ngrok)
+    let tunnel = tunnel::create_tunnel(&cfg.tunnel)?;
+    let tunnel_url = tunnel.start("127.0.0.1", cfg.gateway.port).await;
+    match &tunnel_url {
+        Ok(url) => tracing::info!(tunnel = tunnel.name(), url = %url, "tunnel started"),
+        Err(e) if cfg.tunnel.provider == "none" || cfg.tunnel.provider.is_empty() => {
+            tracing::debug!("no tunnel configured: {e}");
+        }
+        Err(e) => tracing::warn!(error = %e, "tunnel start failed"),
+    }
+
+    // Initialize SQLite session persistence
+    let session_db_path = cfg.workspace_dir.join("sessions.db");
+    match sessions::SessionStore::open(&session_db_path) {
+        Ok(_) => tracing::info!("session persistence initialized at {}", session_db_path.display()),
+        Err(e) => tracing::warn!(error = %e, "session persistence unavailable"),
+    }
+
+    // Scan and register skills
+    let skill_registry = skills::SkillRegistry::scan(&cfg.workspace_dir).unwrap_or_default();
+    let skill_count = skill_registry.list().len();
+    if skill_count > 0 {
+        tracing::info!(skills = skill_count, "skills loaded");
+    }
+
     // Start enabled channels via channel router
     let handles = channels::start_enabled_channels(&cfg);
 
